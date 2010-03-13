@@ -178,15 +178,17 @@ Table Of Contents
   8: Basic examples
   9: Extended example using some fictional model data
 
-If you don't like the tag syntax used in sections 5 to 9 (inspired by
-Cliff Wells' 'Brevé'), please just remember my main argument and use
-your imagination to dream up something better.  Twisted / Nevow's
-'Stan' is another way of doing it. Lisp / scheme programmers are
-using similar embedded DSLs for HTML-generation
-(http://article.gmane.org/gmane.lisp.scheme.plt/16412).  S-expressions
-and the code-as-data / data-as-code philosophy make such a style very
-natural in Lisps.  My argument and this code are an echo of what Stan,
-Brevé and various lisp libraries have been doing for a long time.
+The tag syntax in sections 5 to 9 comes from Donovan Preston's 'Stan'
+(part of Twisted / Nevow) and Cliff Wells' 'Brevé'.  If you don't like
+it, please just remember my main argument and use your imagination to
+dream up something better.  Lisp / scheme programmers are using
+similar embedded DSLs for HTML-generation.  S-expressions and the
+code-as-data / data-as-code philosophy make such a style very natural
+in Lisps.  My argument and this code are an echo of what Stan, Brevé
+and various lisp libraries have been doing for a long time.  (see
+http://www.kieranholland.com/code/documentation/nevow-stan/
+http://breve.twisty-industries.com/ and
+http://article.gmane.org/gmane.lisp.scheme.plt/16412)
 
 I find this `visitor pattern` variation much more interesting than this
 particular tree building syntax.  Kudos to Python's dynamic, yet
