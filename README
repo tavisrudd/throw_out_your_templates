@@ -1,3 +1,6 @@
+This README is copied from the module docstring, you should read that
+and the code instead.  This is just a preview for bitbucket ...
+--------------------------------------------------------------------------------
 Python has many template languages and most Python developers have
 used several or written their own (I'm guilty, Cheetah).  Very few
 Python web developers use Python itself for HTML/view generation.
