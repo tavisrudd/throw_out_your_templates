@@ -95,3 +95,6 @@ important as the back-end and should be held to the same standards.
 Furthermore, if someone can include Javascript in the template there
 is no sandboxing.  The same people I've heard using this argument are
 also advocates of code-review, so I'm confused by their logic.
+
+... Read the module docstring for the rest ...
+
