@@ -226,6 +226,9 @@ module level constants (to avoid having strange indentation) and use
 Markdown, Textile, ReST, or something similar to handle the markup
 prior to labeling them as `safe_unicode` (see below) that doesn't need
 any further escaping.
+
+p.s. I discovered after writing this that Cliff Wells wrote a similar
+rant back in 2007:  http://www.enemyofthestatement.com/post/by_tag/29
 """
 from __future__ import with_statement
 import types
