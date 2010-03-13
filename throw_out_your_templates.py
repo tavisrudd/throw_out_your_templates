@@ -55,8 +55,8 @@ It's argued that template languages, compared to Python:
      (non-programmers, junior developers, contractors, etc.).
 
 I used to believe these arguments but recently I've come to see them
-as mostly dogma. Consider this module as evidence for my
-counterargument:
+as mostly dogma. Consider the example code in this module as evidence
+for my counterargument:
 
 It is easy to generate correct HTML from plain Python without a)
 blurring the separation between the domain/application and
@@ -185,7 +185,8 @@ your imagination to dream up something better.  Twisted / Nevow's
 using similar embedded DSLs for HTML-generation
 (http://article.gmane.org/gmane.lisp.scheme.plt/16412).  S-expressions
 and the code-as-data / data-as-code philosophy make such a style very
-natural in Lisps.
+natural in Lisps.  My argument and this code are an echo of what Stan,
+Brevé and various lisp libraries have been doing for a long time.
 
 I find this `visitor pattern` variation much more interesting than this
 particular tree building syntax.  Kudos to Python's dynamic, yet
@@ -221,7 +222,7 @@ There are a few uses cases where I still use and appreciate templates:
 
   - when composing email templates
 
-Another option for these use cases, is to put any large text blocks in
+Another option for these use cases is to put any large text blocks in
 module level constants (to avoid having strange indentation) and use
 Markdown, Textile, ReST, or something similar to handle the markup
 prior to labeling them as `safe_unicode` (see below) that doesn't need
