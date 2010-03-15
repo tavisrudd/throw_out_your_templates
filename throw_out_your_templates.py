@@ -232,6 +232,20 @@ any further escaping.
 
 p.s. I discovered after writing this that Cliff Wells wrote a similar
 rant back in 2007:  http://www.enemyofthestatement.com/post/by_tag/29
+
+p.p.s Christopher Lenz wrote a good reply to Cliff's post:
+
+    In the end, the reason why I personally wouldn't use something like
+    Stan or Breve is because I actually want to work directly with the
+    HTML, CSS, and Javascript in my application. I want my text editor
+    of choice  to be able to assist me with all the tools it provides
+    for working with markup, including support for embedded CSS and
+    Javascript. I want to be able to quickly preview a template by
+    opening it directly in the browser, without having to run it
+    through the template engine first. When I'm working on a template,
+    I want to be using HTML, not  Python.
+    -- http://www.cmlenz.net/archives/2007/01/genshi-smells-like-php
+
 """
 from __future__ import with_statement
 import types
