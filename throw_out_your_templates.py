@@ -247,20 +247,40 @@ p.p.s Christopher Lenz wrote a good reply to Cliff's post:
     -- http://www.cmlenz.net/archives/2007/01/genshi-smells-like-php
 
 """
-from __future__ import with_statement
-import types
-from types import InstanceType
-from decimal import Decimal
-from cgi import escape as xml_escape
 
-__author__ = 'Tavis Rudd <tavis@damnsimple.com>'
+import types
+
+InstanceType = None
+from decimal import Decimal
+from html import escape as xml_escape
+
+__all__ = [
+    "HTML5Doc",
+    "Example",
+    "Serializer",
+    "VisitorMap",
+    "XmlName",
+    "XmlAttributes",
+    "XmlAttribute",
+    "XmlElement",
+    "XmlElementProto",
+    "XmlEntityRef",
+    "XmlCData",
+    "Comment",
+    "Script",
+    "default_visitors_map",
+    "safe_unicode",
+    "examples_vmap",
+    "htmltags",
+    "render",
+]
+__author__ = "Tavis Rudd <tavis@damnsimple.com>"
+
 
 def get_default_encoding():
-    return 'utf-8'
+    return "utf-8"
 
-################################################################################
-# 1: str/unicode wrappers used to prevent double-escaping. This is the
-# same concept as django.utils.safestring and webhelpers.html.literal
+
 class safe_bytes(str):
     def decode(self, *args, **kws):
         return safe_unicode(super(safe_bytes, self).encode(*args, **kws))
@@ -274,81 +294,51 @@ class safe_bytes(str):
         else:
             return res
 
-class safe_unicode(unicode):
+
+class safe_unicode(str):
     def encode(self, *args, **kws):
         return safe_bytes(super(safe_unicode, self).encode(*args, **kws))
 
     def __add__(self, o):
         res = super(safe_unicode, self).__add__(o)
-        return (safe_unicode(res)
-                if isinstance(o, (safe_unicode, safe_bytes)) else res)
+        return safe_unicode(res) if isinstance(o, (safe_unicode, safe_bytes)) else res
 
-################################################################################
-# 2: Serializer
+
 class Serializer(object):
-    """A tree walker that uses the visitor pattern to serialize what
-    it walks into properly escaped unicode.
-    """
     def __init__(self, visitor_map=None, input_encoding=None):
         if visitor_map is None:
             visitor_map = default_visitors_map.copy()
         self.visitor_map = visitor_map
-        self.input_encoding = (input_encoding or get_default_encoding())
+        self.input_encoding = input_encoding or get_default_encoding()
         self._safe_unicode_buffer = []
 
     def serialize(self, obj):
-        """Serialize an object, and its children, into sanitized unicode."""
         self._safe_unicode_buffer = []
         self.walk(obj)
-        return safe_unicode(u''.join(self._safe_unicode_buffer))
+        return safe_unicode("".join(self._safe_unicode_buffer))
 
     def walk(self, obj):
-        """This method is called by visitors for anything they
-        encounter which they don't explicitly handle.
-        """
         visitor = self.visitor_map.get_visitor(obj)
         if visitor:
-            visitor(obj, self) # ignore return value
+            visitor(obj, self)
         else:
-            raise TypeError('No visitor found for %s'%repr(obj))
+            raise TypeError("No visitor found for %s" % repr(obj))
 
     def emit(self, escaped_unicode_output):
-        """This is called by visitors when they have escaped unicode
-        to output.
-        """
         self._safe_unicode_buffer.append(escaped_unicode_output)
 
     def emit_many(self, output_seq):
         self._safe_unicode_buffer.extend(output_seq)
 
-################################################################################
-# 3: VisitorMap
-class VisitorMap(dict):
-    """Maps Python types to visitors that know how to serialize them.
 
-    A `VisitorMap` can be chained to a `parent_map` that it will
-    fall-back to if it doesn't have a visitor registered for a
-    specific type (or one of that types base classes).
-    """
+class VisitorMap(dict):
     def __init__(self, map_or_seq=(), parent_map=None):
         super(VisitorMap, self).__init__(map_or_seq)
         self.parent_map = parent_map
 
     def get_visitor(self, obj, use_default=True):
-        """Return the visitor callable registered for `type(obj)`.
-
-        If no exact match is found, it will look for a visitor
-        registered on a base-type in `type(obj).__mro__`.  If that
-        fails and the VisitorMap has a `parent_map`,
-        `parent_map.get_visitor(obj, use_default=False)` will be
-        called.
-
-        If all of the above fails, it returns the `DEFAULT` visitor or
-        `None`.
-        """
         py_type = type(obj)
-        result = (self.get(py_type)
-                  or self._get_parent_type_visitor(obj, py_type))
+        result = self.get(py_type) or self._get_parent_type_visitor(obj, py_type)
         if result:
             return result
         elif self.parent_map is not None:
@@ -360,13 +350,14 @@ class VisitorMap(dict):
         return result
 
     def _get_parent_type_visitor(self, obj, py_type):
-        if py_type is InstanceType: # support old-style classes
+        if py_type is InstanceType:
             m = [t for t in self if isinstance(obj, t)]
             for i, t in enumerate(m):
-                if not any(t2 for t2 in m[i+i:]
-                           if t2 is not t and issubclass(t2, t)):
+                if not any(
+                    t2 for t2 in m[i + i :] if t2 is not t and issubclass(t2, t)
+                ):
                     return self[t]
-        else: # newstyle type/class
+        else:
             for base in py_type.__mro__:
                 if base in self:
                     return self[base]
@@ -375,38 +366,25 @@ class VisitorMap(dict):
         return self.__class__(super(VisitorMap, self).copy())
 
     def as_context(self, walker, set_parent_map=True):
-        """Returns as context manager for use with 'with' statements
-        inside visitor functions.
-
-        It allows you to define a set of visitor mappings that only
-        apply within the current visitor's context and have all other
-        mappings looked up in the exising visitor_map.  See
-        `visit_xml_cdata` an example.
-        """
         return _VisitorMapContextManager(self, walker, set_parent_map)
 
     def register(self, py_type, visitor=None):
-        """If both args are passed, this does `vmap[py_type] = visitor`.
-        If only `py_type` is passed, it assumes you are decorating a
-        visitor function definition:
-          @vmap.register(some_type)
-          def visit_some_type(o, w):
-              ...
-        """
         if visitor:
             self[py_type] = visitor
         else:
+
             def decorator(f):
                 self[py_type] = f
                 return f
+
             return decorator
 
+
 class DEFAULT:
-    ">>> visitor_map[DEFAULT] = visitor # sets default fallback visitor"
+    pass
+
 
 class _VisitorMapContextManager(object):
-    """The `with` statement context manager returned by
-    VisitorMap.as_context()"""
     def __init__(self, vmap, walker, set_parent_map=True):
         self.vmap = vmap
         self.original_map = None
@@ -425,49 +403,44 @@ class _VisitorMapContextManager(object):
         if self.set_parent_map:
             self.vmap.parent_map = None
 
-################################################################################
-# 4:  Default serialization visitors for standard Python types
 
-# visitor signature = "f(obj_to_be_walked, walker)", return value ignored
-# o = obj_to_be_walked, w = walker (aka serializer)
-default_visitors_map = VisitorMap({
-    str: (lambda o,w: w.walk(unicode(o, w.input_encoding, 'strict'))),
-    unicode: (lambda o, w: w.emit(o)),
-    safe_bytes: (lambda o, w: w.emit(unicode(o, w.input_encoding, 'strict'))),
-    safe_unicode: (lambda o, w: w.emit(o)),
-    types.NoneType: (lambda o, w: None),
-    bool: (lambda o, w: w.emit(str(o))),
-    type: (lambda o, w: w.walk(unicode(o))),
-    DEFAULT: (lambda o, w: w.walk(repr(o)))})
-
-number_types = (int, long, Decimal, float, complex)
+default_visitors_map = VisitorMap(
+    {
+        str: (lambda o, w: w.walk(str(o, w.input_encoding, "strict"))),
+        str: (lambda o, w: w.emit(o)),
+        safe_bytes: (lambda o, w: w.emit(str(o, w.input_encoding, "strict"))),
+        safe_unicode: (lambda o, w: w.emit(o)),
+        type(None): (lambda o, w: None),
+        bool: (lambda o, w: w.emit(str(o))),
+        type: (lambda o, w: w.walk(str(o))),
+        DEFAULT: (lambda o, w: w.walk(repr(o))),
+    }
+)
+number_types = (int, int, Decimal, float, complex)
 func_types = (types.FunctionType, types.BuiltinMethodType, types.MethodType)
-sequence_types = (tuple, list, set, frozenset, xrange, types.GeneratorType)
-
+sequence_types = (tuple, list, set, frozenset, range, types.GeneratorType)
 for typeset, visitor in (
     (number_types, (lambda o, w: w.emit(str(o)))),
     (sequence_types, (lambda o, w: [w.walk(i) for i in o])),
-    (func_types, (lambda o, w: w.walk(o())))):
+    (func_types, (lambda o, w: w.walk(o()))),
+):
     for type_ in typeset:
         default_visitors_map[type_] = visitor
 
 
-################################################################################
-# 5: Declarative classes for creating a dom-like tree of xml/html elements:
-
-# If you don't like this particular tag building syntax, please
-# remember my main argument and use your imagination to dream up
-# a better syntax.  The code above (sections 1-4) is what counts.
-# Everything that follows can be swapped out.
-
 class XmlName(safe_unicode):
-    """An XML element or attribute name"""
+    pass
 
-class XmlAttributes(list): pass
+
+class XmlAttributes(list):
+    pass
+
+
 class XmlAttribute(object):
     def __init__(self, value, name=None):
         self.value = value
         self.name = name
+
 
 class XmlElement(object):
     attrs = None
@@ -479,21 +452,20 @@ class XmlElement(object):
     def __call__(self, class_=None, **attrs):
         assert not self.attrs
         if class_ is not None:
-            attrs['class'] = class_
+            attrs["class"] = class_
         self.attrs = self._normalize_attrs(attrs)
         return self
 
     def _normalize_attrs(self, attrs):
         out = XmlAttributes()
-        for n, v in attrs.items():
-            if n.endswith('_'):
+        for n, v in list(attrs.items()):
+            if n.endswith("_"):
                 n = n[:-1]
-            if '_' in n:
-                if '__' in n:
-                    n = n.replace('__',':')
-                elif 'http_' in n:
-                    n = n.replace('http_', 'http-')
-            # may eventually run into encoding issues with name:
+            if "_" in n:
+                if "__" in n:
+                    n = n.replace("__", ":")
+                elif "http_" in n:
+                    n = n.replace("http_", "http-")
             out.append(XmlAttribute(value=v, name=XmlName(n)))
         return out
 
@@ -509,6 +481,7 @@ class XmlElement(object):
         self._add_children(children)
         return self
 
+
 class XmlElementProto(object):
     def __init__(self, name, can_be_empty=False, element_class=XmlElement):
         self.name = XmlName(name)
@@ -517,129 +490,127 @@ class XmlElementProto(object):
 
     def __call__(self, class_=None, **attrs):
         if class_ is not None:
-            attrs['class'] = class_
+            attrs["class"] = class_
         return self.element_class(self.name)(**attrs)
 
     def __getitem__(self, children):
         return self.element_class(self.name)[children]
 
+
 class XmlEntityRef(object):
     def __init__(self, alpha, num, description):
         self.alpha, self.num, self.description = (alpha, num, description)
+
 
 class XmlCData(object):
     def __init__(self, content):
         self.content = content
 
+
 class Comment(object):
     def __init__(self, content):
         self.content = content
 
+
 class Script(XmlElement):
     pass
 
-# This list of html tags isn't exhaustive.  It's just an example.
-# The definitive list of tags and whether they can be empty is html
-# version specific.  If you care about that, you could create a
-# separate list for each html version.
-_non_empty_html_tags = '''
-  a abbr acronym address applet b bdo big blockquote body button
-  caption center cite code colgroup dd dfn div dl dt em fieldset font
-  form frameset h1 h2 h3 h4 h5 h6 head html i iframe ins kbd label
-  legend li menu noframes noscript ol optgroup option pre q s samp
-  select small span strike strong style sub sup table tbody td
-  textarea tfoot th thead title tr tt u ul var'''.split()
 
-_maybe_empty_html_tags = '''
-    area base br col frame hr img input link meta p param script'''.split()
-
+_non_empty_html_tags = """a abbr acronym address applet b bdo big blockquote body button caption center cite code colgroup dd dfn div dl dt em fieldset font form frameset h1 h2 h3 h4 h5 h6 head html i iframe ins kbd label legend li menu noframes noscript ol optgroup option pre q s samp select small span strike strong style sub sup table tbody td textarea tfoot th thead title tr tt u ul var""".split()
+_maybe_empty_html_tags = (
+    """area base br col frame hr img input link meta p param script""".split()
+)
 htmltags = dict(
     [(n, XmlElementProto(n, False)) for n in _non_empty_html_tags]
     + [(n, XmlElementProto(n, True)) for n in _maybe_empty_html_tags]
-    + [('script', XmlElementProto('script', element_class=Script))])
-
-# I have a separate module that defines the html entity refs.  Email
-# me if you would like a copy.
-
-################################################################################
-# 6: Visitors for the xml/html elements, etc.
-
+    + [("script", XmlElementProto("script", element_class=Script))]
+)
 xml_default_visitors_map = default_visitors_map.copy()
-# o = obj_to_be_walked, w = walker (aka serializer)
-xml_default_visitors_map.update({
-    unicode: (lambda o, w: w.emit(xml_escape(o))),
-    XmlName: (lambda o, w: w.emit(unicode(o))),
-    XmlAttributes: (lambda o, w: [w.walk(i) for i in o]),
-    XmlElementProto: (lambda o, w: (
-        w.emit(safe_unicode('<%s />'%o.name)
-               if o.can_be_empty
-               else safe_unicode('<%s></%s>'%(o.name, o.name))))),
-    XmlEntityRef: (lambda o, w: w.emit(safe_unicode('&%s;'%o.alpha))),
-    })
+xml_default_visitors_map.update(
+    {
+        str: (lambda o, w: w.emit(xml_escape(o))),
+        XmlName: (lambda o, w: w.emit(str(o))),
+        XmlAttributes: (lambda o, w: [w.walk(i) for i in o]),
+        XmlElementProto: (
+            lambda o, w: (
+                w.emit(
+                    safe_unicode("<%s />" % o.name)
+                    if o.can_be_empty
+                    else safe_unicode("<%s></%s>" % (o.name, o.name))
+                )
+            )
+        ),
+        XmlEntityRef: (lambda o, w: w.emit(safe_unicode("&%s;" % o.alpha))),
+    }
+)
+
 
 @xml_default_visitors_map.register(XmlElement)
 def visit_xml_element(elem, walker):
-    walker.emit_many(('<', elem.name))
+    walker.emit_many(("<", elem.name))
     walker.walk(elem.attrs)
-    walker.emit('>')
+    walker.emit(">")
     walker.walk(elem.children)
-    walker.emit('</%s>'%elem.name)
+    walker.emit("</%s>" % elem.name)
+
 
 def _substring_replace_ctx(walker, s, r, ofilter=lambda x: x):
     return VisitorMap(
-        {unicode: lambda o, w: w.emit(ofilter(o.replace(s, r, -1)))
-         }).as_context(walker)
+        {str: lambda o, w: w.emit(ofilter(o.replace(s, r, -1)))}
+    ).as_context(walker)
+
 
 @xml_default_visitors_map.register(XmlAttribute)
 def visit_xml_attribute(attr, walker):
-    walker.emit_many((' ', attr.name, '="')) # attr.name isinstance of XmlName
-    with _substring_replace_ctx(walker, '"', r'\"', xml_escape):
+    walker.emit_many((" ", attr.name, '="'))
+    with _substring_replace_ctx(walker, '"', r"\"", xml_escape):
         walker.walk(attr.value)
     walker.emit('"')
 
+
 @xml_default_visitors_map.register(Comment)
 def visit_xml_comment(obj, walker):
-    walker.emit('<!--')
-    with _substring_replace_ctx(walker, '--','-/-'):
+    walker.emit("<!--")
+    with _substring_replace_ctx(walker, "--", "-/-"):
         walker.walk(obj.content)
-    walker.emit('-->')
+    walker.emit("-->")
+
 
 @xml_default_visitors_map.register(XmlCData)
 def visit_xml_cdata(obj, walker):
-    walker.emit('<![CDATA[')
-    with _substring_replace_ctx(walker, ']]>',']-]->'):
+    walker.emit("<![CDATA[")
+    with _substring_replace_ctx(walker, "]]>", "]-]->"):
         walker.walk(obj.content)
-    walker.emit(']]>')
+    walker.emit("]]>")
+
 
 @xml_default_visitors_map.register(Script)
 def visit_script_tag(elem, walker):
-    walker.emit_many(('<', elem.name))
+    walker.emit_many(("<", elem.name))
     walker.walk(elem.attrs)
-    walker.emit('>')
+    walker.emit(">")
     if elem.children:
-        walker.emit('\n//')
-        walker.walk(XmlCData(('\n', elem.children, '\n//')))
-        walker.emit('\n')
-    walker.emit('</%s>'%elem.name)
-################################################################################
-## End core module code, begin examples
-################################################################################
+        walker.emit("\n//")
+        walker.walk(XmlCData(("\n", elem.children, "\n//")))
+        walker.emit("\n")
+    walker.emit("</%s>" % elem.name)
 
-################################################################################
-# 7: Helpers for examples:
 
 examples_vmap = xml_default_visitors_map.copy()
+
 
 @examples_vmap.register(XmlElement)
 def pprint_visit_xml_element(elem, walker):
     visit_xml_element(elem, walker)
-    walker.emit('\n') # easier to read example output
+    walker.emit("\n")
+
 
 class Example(object):
-    all_examples = [] #class attr
-    def __init__(self, name, content,
-                 visitor_map=examples_vmap,
-                 input_encoding='utf-8'):
+    all_examples = []
+
+    def __init__(
+        self, name, content, visitor_map=examples_vmap, input_encoding="utf-8"
+    ):
         self.name = name
         self.content = content
         self.visitor_map = visitor_map
@@ -647,126 +618,128 @@ class Example(object):
         Example.all_examples.append(self)
 
     def show(self):
-        print '-'*80
-        print '## Output from example:', self.name
-        print
-        output = Serializer(
-            self.visitor_map,
-            self.input_encoding).serialize(self.content)
-        print output.encode(get_default_encoding())
+        print(self.name, "\n")
+        output = Serializer(self.visitor_map, self.input_encoding).serialize(
+            self.content
+        )
+        print(output.encode(get_default_encoding()), "\r\n\r\n")
 
 
-## put some html tags in the module scope to make the examples less
-## verbose:
+def render(content, visitor_map=examples_vmap, input_encoding="utf-8"):
+    output = Serializer(visitor_map, input_encoding).serialize(content)
+    return output
+
+
 class _GetAttrDict(dict):
     def __getattr__(self, k):
         try:
             return self[k]
         except KeyError:
             raise AttributeError(k)
+
+
 htmltags = _GetAttrDict(htmltags)
-meta   = htmltags.meta
-html   = htmltags.html
-head   = htmltags.head
-script = htmltags.script
-title  = htmltags.title
-body   = htmltags.body
-div    = htmltags.div
-span   = htmltags.span
-h1     = htmltags.h1
-h2     = htmltags.h2
-ul     = htmltags.ul
-li     = htmltags.li
-## could also say:
-#for k, v in htmltags.iteritems():
-#    exec '%s = htmltags["%s"]'%(k, k)
-## but then my pyflakes/flymake setup complains about undefined vars ...
+for k, v in htmltags.items():
+    __all__.append(k)
+    exec('%s = htmltags["%s"]' % (k, k))
 
-################################################################################
-# 8: Basic examples
-Example(
-    'Standard python types, no html',
-    [1, 2, 3
-     , 4.0
-     , 'a', u'b'
-     , ('c', ('d', 'e')
-        , set(['f', 'f'])) # nested
-     , (i*2 for i in xrange(10))
-     ])
-# output = '1234.0abcdef024681012141618'
-
-Example(
-    'Standard python types, no html *or* html escaping',
-    [1, '<', 2, '<', 3],
-    visitor_map=default_visitors_map)
-# output = '1<2<3'
-
-# To see output from the rest of the examples exec this module
-Example(
-    'Full html5 doc, no wrapper',
-    [safe_unicode('<!DOCTYPE html>'),
-     html(lang='en')[
-         head[title['An example'], meta(charset='UTF-8')],
-         body['Some content']
-         ]
-     ])
 
 class HTML5Doc(object):
     def __init__(self, body, head=None):
         self.body = body
         self.head = (
-            head if head
-            else htmltags.head[title['An example'],
-                               meta(charset='UTF-8')])
+            head if head else htmltags.head[title["An example"], meta(charset="UTF-8")]
+        )
+
+
+Example(
+    "Standard python types, no html",
+    [
+        1,
+        2,
+        3,
+        4.0,
+        "a",
+        "b",
+        ("c", ("d", "e"), set(["f", "f"])),
+        (i * 2 for i in range(10)),
+    ],
+)
+# output = '1234.0abcdef024681012141618'
+
+Example(
+    "Standard python types, no html *or* html escaping",
+    [1, "<", 2, "<", 3],
+    visitor_map=default_visitors_map,
+)
+# output = '1<2<3'
+
+# To see output from the rest of the examples exec this module
+Example(
+    "Full html5 doc, no wrapper",
+    [
+        safe_unicode("<!DOCTYPE html>"),
+        html(lang="en")[
+            head[title["An example"], meta(charset="UTF-8")], body["Some content"]
+        ],
+    ],
+)
+
+
+class HTML5Doc(object):
+    def __init__(self, body, head=None):
+        self.body = body
+        self.head = (
+            head if head else htmltags.head[title["An example"], meta(charset="UTF-8")]
+        )
+
 
 @examples_vmap.register(HTML5Doc)
 def visit_html5_doc(doc, walker):
-    walker.walk([safe_unicode('<!DOCTYPE html>'),
-                 html(lang='en')[
-                     doc.head,
-                     doc.body]])
+    walker.walk([safe_unicode("<!DOCTYPE html>"), html(lang="en")[doc.head, doc.body]])
+
+
+Example("Full html5 doc, with wrapper", HTML5Doc(body("a_css_class")[div["content"]]))
 
 Example(
-    'Full html5 doc, with wrapper',
-    HTML5Doc(body('a_css_class')[div['content']]))
+    "Full html5 doc, with wrapper and overriden head",
+    HTML5Doc(body("wrapped")[div["content"]], head=title["Overriden"]),
+)
 
 Example(
-    'Full html5 doc, with wrapper and overriden head',
-    HTML5Doc(body('wrapped')[div['content']],
-             head=title['Overriden']))
-
-Example(
-    """Context-aware HTML escaping
-    (does any template lang other than Genshi do this?)""",
+    "Context-aware HTML escaping (does any template lang other than Genshi do this?)",
     HTML5Doc(
         body(onload='func_with_esc_args(1, "bar")')[
-            div['Escaped chars: ', '< ', u'>', '&'],
-            script(type='text/javascript')[
-                 'var lt_not_escaped = (1 < 2);',
-                 '\nvar escaped_cdata_close = "]]>";',
-                 '\nvar unescaped_ampersand = "&";'
-                ],
-            Comment('''
+            div["Escaped chars: ", "< ", ">", "&"],
+            script(type="text/javascript")[
+                "var lt_not_escaped = (1 < 2);",
+                '\nvar escaped_cdata_close = "]]>";',
+                '\nvar unescaped_ampersand = "&";',
+            ],
+            Comment(
+                """
             not escaped "< & >"
             escaped: "-->"
-            '''),
-            div['some encoded bytes and the equivalent unicode:',
-                '你好', unicode('你好', 'utf-8')],
-            safe_unicode('<b>My surrounding b tags are not escaped</b>'),
-            ]))
+        """
+            ),
+            div["some encoded bytes and the equivalent unicode:", "你好", "你好"],
+            safe_unicode("<b>My surrounding b tags are not escaped</b>"),
+        ]
+    ),
+)
 
 Example(
-    'a snippet using a list comprehension',
-    div[[span(id=('id', i))[i, ' is > ', i-1]
-         for i in xrange(5)]])
+    "a snippet using a list comprehension",
+    div[[span(id=("id", i))[i, " is > ", i - 1] for i in range(5)]],
+)
 
-
-################################################################################
-# 9: Extended example using some fictional model data
 
 from decimal import Decimal
+
+
 class Money(Decimal):
     pass
+
 
 class PriceRule(object):
     def __init__(self, oid, product, price):
@@ -774,80 +747,93 @@ class PriceRule(object):
         self.product = product
         self.price = price
 
+
 class PriceSet(list):
     pass
+
 
 class Organization(object):
     def __init__(self, name):
         self.name = name
         self.price_rules = PriceSet()
 
-######
-# Imperative approach: simple, but inflexible
 
 def render_org_prices__imperative(org):
     return (
-        div[h1['Custom Prices For ', org.name],
-            div[ul[(li[render_price(pr)] for pr in org.price_rules)]]]
+        div[
+            h1["Custom Prices For ", org.name],
+            div[ul[(li[render_price(pr)] for pr in org.price_rules)]],
+        ]
         if org.price_rules
-        else h1['No Custom Prices For ', org.name])
+        else h1["No Custom Prices For ", org.name]
+    )
+
 
 def render_price(pr):
-    return span('price_rule', id=('rule', pr.oid))[
-        pr.product, ': $%0.2f'%pr.price]
+    return span("price_rule", id=("rule", pr.oid))[pr.product, ": $%0.2f" % pr.price]
 
-customer1 = Organization(name='Smith and Sons')
+
+customer1 = Organization(name="Smith and Sons")
 customer1.price_rules.extend(
-    [PriceRule(oid=i, product='Product %i'%i, price=Money(str('%0.2f'%(i*1.5))))
-     for i in xrange(10)])
+    [
+        PriceRule(
+            oid=i, product="Product %i" % i, price=Money(str("%0.2f" % (i * 1.5)))
+        )
+        for i in range(10)
+    ]
+)
 
 Example(
-    'Customer pricing printout, imperative',
-    render_org_prices__imperative(customer1))
+    "Customer pricing printout, imperative", render_org_prices__imperative(customer1)
+)
 
-######
-# Declarative approach: cleaner, modular and flexible
-# Delegates as many choices as possible to visitors, with each visitor
-# doing one thing only:
 
 new_vmap = examples_vmap.copy()
+
+
 class UIScreen(object):
-    "Abstract declarations of ui screens"
     def __init__(self, title, content=None):
         self.title = title
         self.content = content
 
+
 @new_vmap.register(UIScreen)
 def visit_screen(screen, w):
-    w.walk(HTML5Doc(
-        body=body[h1[screen.title],
-                  div('content')[screen.content]],
-        head=head[title[screen.title]]))
+    w.walk(
+        HTML5Doc(
+            body=body[h1[screen.title], div("content")[screen.content]],
+            head=head[title[screen.title]],
+        )
+    )
+
 
 @new_vmap.register(PriceSet)
 def visit_priceset(pset, w):
     w.walk(ul[(li[pr] for pr in pset)])
 
+
 @new_vmap.register(Money)
 def visit_money(m, w):
-    w.walk('$%0.2f'%m)
+    w.walk("$%0.2f" % m)
+
 
 @new_vmap.register(PriceRule)
 def visit_pricerule(pr, w):
-    w.walk(span('price_rule', id=('rule', pr.oid))[pr.product, ': ', pr.price])
+    w.walk(span("price_rule", id=("rule", pr.oid))[pr.product, ": ", pr.price])
+
 
 def render_org_prices__declarative(org):
     return UIScreen(
-      title=('Custom Prices For ', org.name),
-      content=(org.price_rules
-               if org.price_rules
-               else 'No custom prices assigned.'))
-Example(
-    'Customer pricing printout, declarative',
-    render_org_prices__declarative(customer1),
-    visitor_map=new_vmap)
+        title=("Custom Prices For ", org.name),
+        content=org.price_rules if org.price_rules else "No custom prices assigned.",
+    )
 
-################################################################################
-if __name__ == '__main__':
-    for example in Example.all_examples:
-        example.show()
+
+Example(
+    "Customer pricing printout, declarative",
+    render_org_prices__declarative(customer1),
+    visitor_map=new_vmap,
+)
+
+for example in Example.all_examples:
+    example.show()
