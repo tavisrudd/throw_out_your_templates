@@ -445,9 +445,11 @@ class XmlAttribute(object):
 class XmlElement(object):
     attrs = None
     children = None
+    single = False
 
-    def __init__(self, name):
+    def __init__(self, name, single):
         self.name = name
+        self.single = single
 
     def __call__(self, class_=None, **attrs):
         assert not self.attrs
@@ -491,10 +493,10 @@ class XmlElementProto(object):
     def __call__(self, class_=None, **attrs):
         if class_ is not None:
             attrs["class"] = class_
-        return self.element_class(self.name)(**attrs)
+        return self.element_class(self.name, self.can_be_empty)(**attrs)
 
     def __getitem__(self, children):
-        return self.element_class(self.name)[children]
+        return self.element_class(self.name, self.can_be_empty)[children]
 
 
 class XmlEntityRef(object):
@@ -551,7 +553,8 @@ def visit_xml_element(elem, walker):
     walker.walk(elem.attrs)
     walker.emit(">")
     walker.walk(elem.children)
-    walker.emit("</%s>" % elem.name)
+    if not elem.single:
+        walker.emit("</%s>" % elem.name)
 
 
 def _substring_replace_ctx(walker, s, r, ofilter=lambda x: x):
@@ -716,12 +719,10 @@ Example(
                 '\nvar escaped_cdata_close = "]]>";',
                 '\nvar unescaped_ampersand = "&";',
             ],
-            Comment(
-                """
+            Comment("""
             not escaped "< & >"
             escaped: "-->"
-        """
-            ),
+            """),
             div["some encoded bytes and the equivalent unicode:", "你好", "你好"],
             safe_unicode("<b>My surrounding b tags are not escaped</b>"),
         ]
@@ -837,4 +838,3 @@ Example(
 
 for example in Example.all_examples:
     example.show()
-
