@@ -269,16 +269,14 @@ __all__ = [
     "Comment",
     "Script",
     "default_visitors_map",
+    "safe_bytes",
     "safe_unicode",
     "examples_vmap",
     "htmltags",
     "render",
+    "propogate",
 ]
 __author__ = "Tavis Rudd <tavis@damnsimple.com>"
-
-
-def get_default_encoding():
-    return "utf-8"
 
 
 class safe_bytes(str):
@@ -309,7 +307,7 @@ class Serializer(object):
         if visitor_map is None:
             visitor_map = default_visitors_map.copy()
         self.visitor_map = visitor_map
-        self.input_encoding = input_encoding or get_default_encoding()
+        self.input_encoding = input_encoding or "utf-8"
         self._safe_unicode_buffer = []
 
     def serialize(self, obj):
@@ -445,7 +443,7 @@ class XmlAttribute(object):
 class XmlElement(object):
     attrs = None
     children = None
-    single = False
+    single = None
 
     def __init__(self, name, single):
         self.name = name
@@ -625,7 +623,7 @@ class Example(object):
         output = Serializer(self.visitor_map, self.input_encoding).serialize(
             self.content
         )
-        print(output.encode(get_default_encoding()), "\r\n\r\n")
+        print(output.encode("utf-8"), "\r\n\r\n")
 
 
 def render(content, visitor_map=examples_vmap, input_encoding="utf-8"):
@@ -642,199 +640,25 @@ class _GetAttrDict(dict):
 
 
 htmltags = _GetAttrDict(htmltags)
-for k, v in htmltags.items():
-    __all__.append(k)
-    exec('%s = htmltags["%s"]' % (k, k))
+
+
+def propogate(append_to):
+    for key, value in htmltags.items():
+        if (scope_type := type(append_to)) == list:
+            append_to.append(key)
+        elif scope_type == dict:
+            append_to.update({key: value})
+        elif isinstance(scope_type, object):
+            setattr(append_to, key, value)
 
 
 class HTML5Doc(object):
     def __init__(self, body, head=None):
         self.body = body
         self.head = (
-            head if head else htmltags.head[title["An example"], meta(charset="UTF-8")]
+            head
+            if head
+            else htmltags.head[
+                htmltags.title["An example"], htmltags.meta(charset="UTF-8")
+            ]
         )
-
-
-Example(
-    "Standard python types, no html",
-    [
-        1,
-        2,
-        3,
-        4.0,
-        "a",
-        "b",
-        ("c", ("d", "e"), set(["f", "f"])),
-        (i * 2 for i in range(10)),
-    ],
-)
-# output = '1234.0abcdef024681012141618'
-
-Example(
-    "Standard python types, no html *or* html escaping",
-    [1, "<", 2, "<", 3],
-    visitor_map=default_visitors_map,
-)
-# output = '1<2<3'
-
-# To see output from the rest of the examples exec this module
-Example(
-    "Full html5 doc, no wrapper",
-    [
-        safe_unicode("<!DOCTYPE html>"),
-        html(lang="en")[
-            head[title["An example"], meta(charset="UTF-8")], body["Some content"]
-        ],
-    ],
-)
-
-
-class HTML5Doc(object):
-    def __init__(self, body, head=None):
-        self.body = body
-        self.head = (
-            head if head else htmltags.head[title["An example"], meta(charset="UTF-8")]
-        )
-
-
-@examples_vmap.register(HTML5Doc)
-def visit_html5_doc(doc, walker):
-    walker.walk([safe_unicode("<!DOCTYPE html>"), html(lang="en")[doc.head, doc.body]])
-
-
-Example("Full html5 doc, with wrapper", HTML5Doc(body("a_css_class")[div["content"]]))
-
-Example(
-    "Full html5 doc, with wrapper and overriden head",
-    HTML5Doc(body("wrapped")[div["content"]], head=title["Overriden"]),
-)
-
-Example(
-    "Context-aware HTML escaping (does any template lang other than Genshi do this?)",
-    HTML5Doc(
-        body(onload='func_with_esc_args(1, "bar")')[
-            div["Escaped chars: ", "< ", ">", "&"],
-            script(type="text/javascript")[
-                "var lt_not_escaped = (1 < 2);",
-                '\nvar escaped_cdata_close = "]]>";',
-                '\nvar unescaped_ampersand = "&";',
-            ],
-            Comment("""
-            not escaped "< & >"
-            escaped: "-->"
-            """),
-            div["some encoded bytes and the equivalent unicode:", "你好", "你好"],
-            safe_unicode("<b>My surrounding b tags are not escaped</b>"),
-        ]
-    ),
-)
-
-Example(
-    "a snippet using a list comprehension",
-    div[[span(id=("id", i))[i, " is > ", i - 1] for i in range(5)]],
-)
-
-
-from decimal import Decimal
-
-
-class Money(Decimal):
-    pass
-
-
-class PriceRule(object):
-    def __init__(self, oid, product, price):
-        self.oid = oid
-        self.product = product
-        self.price = price
-
-
-class PriceSet(list):
-    pass
-
-
-class Organization(object):
-    def __init__(self, name):
-        self.name = name
-        self.price_rules = PriceSet()
-
-
-def render_org_prices__imperative(org):
-    return (
-        div[
-            h1["Custom Prices For ", org.name],
-            div[ul[(li[render_price(pr)] for pr in org.price_rules)]],
-        ]
-        if org.price_rules
-        else h1["No Custom Prices For ", org.name]
-    )
-
-
-def render_price(pr):
-    return span("price_rule", id=("rule", pr.oid))[pr.product, ": $%0.2f" % pr.price]
-
-
-customer1 = Organization(name="Smith and Sons")
-customer1.price_rules.extend(
-    [
-        PriceRule(
-            oid=i, product="Product %i" % i, price=Money(str("%0.2f" % (i * 1.5)))
-        )
-        for i in range(10)
-    ]
-)
-
-Example(
-    "Customer pricing printout, imperative", render_org_prices__imperative(customer1)
-)
-
-
-new_vmap = examples_vmap.copy()
-
-
-class UIScreen(object):
-    def __init__(self, title, content=None):
-        self.title = title
-        self.content = content
-
-
-@new_vmap.register(UIScreen)
-def visit_screen(screen, w):
-    w.walk(
-        HTML5Doc(
-            body=body[h1[screen.title], div("content")[screen.content]],
-            head=head[title[screen.title]],
-        )
-    )
-
-
-@new_vmap.register(PriceSet)
-def visit_priceset(pset, w):
-    w.walk(ul[(li[pr] for pr in pset)])
-
-
-@new_vmap.register(Money)
-def visit_money(m, w):
-    w.walk("$%0.2f" % m)
-
-
-@new_vmap.register(PriceRule)
-def visit_pricerule(pr, w):
-    w.walk(span("price_rule", id=("rule", pr.oid))[pr.product, ": ", pr.price])
-
-
-def render_org_prices__declarative(org):
-    return UIScreen(
-        title=("Custom Prices For ", org.name),
-        content=org.price_rules if org.price_rules else "No custom prices assigned.",
-    )
-
-
-Example(
-    "Customer pricing printout, declarative",
-    render_org_prices__declarative(customer1),
-    visitor_map=new_vmap,
-)
-
-for example in Example.all_examples:
-    example.show()
